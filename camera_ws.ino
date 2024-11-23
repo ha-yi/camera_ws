@@ -34,6 +34,7 @@ TaskHandle_t streamTaskHandle = NULL;
 bool initCamera() {
     Serial.println("Initializing camera...");
     
+    // Pin Kamera punya ESP32-CAM
     config.ledc_channel = LEDC_CHANNEL_0;
     config.ledc_timer = LEDC_TIMER_0;
     config.pin_d0 = 5;
@@ -84,54 +85,42 @@ void setup_motor() {
 /**
  * Process motor control commands received from websocket
  * @param command String command to control motor movement
- *               Valid commands: "forward", "backward", "left", "right", "stop"
- * 
- * Commands trigger corresponding motor pin states:
- * - forward: MOTOR_A_FORWARD HIGH, MOTOR_A_BACKWARD LOW
- * - backward: MOTOR_A_FORWARD LOW, MOTOR_A_BACKWARD HIGH  
- * - left: MOTOR_B_LEFT HIGH, MOTOR_B_RIGHT LOW
- * - right: MOTOR_B_LEFT LOW, MOTOR_B_RIGHT HIGH
- * - stop: All pins LOW
- * 
- * After 100ms delay, all pins are reset to LOW
+ *               Valid commands: "forward", "backward", "left", "right", "stop",
+ *               "forward-left", "forward-right", "backward-left", "backward-right"
  */
 void process_motor_command(const char *command) {
-    // Implement your motor control logic here
     Serial.printf("Processing command: %s\n", command);
+    
+
     if (strcmp(command, "forward") == 0) {
-        Serial.println("Moving Forward");
         digitalWrite(MOTOR_A_FORWARD, HIGH);
         digitalWrite(MOTOR_A_BACKWARD, LOW);
     }
     else if (strcmp(command, "backward") == 0) {
-        Serial.println("Moving Backward");
         digitalWrite(MOTOR_A_FORWARD, LOW);
         digitalWrite(MOTOR_A_BACKWARD, HIGH);
     }
     else if (strcmp(command, "left") == 0) {
-        Serial.println("Turning Left");
         digitalWrite(MOTOR_B_LEFT, HIGH);
         digitalWrite(MOTOR_B_RIGHT, LOW);
-        
+        delay(100); // butuh delay untuk steering
+        digitalWrite(MOTOR_B_LEFT, LOW);
+        digitalWrite(MOTOR_B_RIGHT, LOW);
     }
     else if (strcmp(command, "right") == 0) {
-        Serial.println("Turning Right");
         digitalWrite(MOTOR_B_LEFT, LOW);
         digitalWrite(MOTOR_B_RIGHT, HIGH);
-        
+        delay(100); // butuh delay untuk steering
+        digitalWrite(MOTOR_B_LEFT, LOW);
+        digitalWrite(MOTOR_B_RIGHT, LOW);
     }
+    
     else if (strcmp(command, "stop") == 0) {
-        Serial.println("Stopping");
         digitalWrite(MOTOR_A_FORWARD, LOW);
         digitalWrite(MOTOR_A_BACKWARD, LOW);
         digitalWrite(MOTOR_B_LEFT, LOW);
         digitalWrite(MOTOR_B_RIGHT, LOW);
     }
-    delay(100);
-    digitalWrite(MOTOR_A_FORWARD, LOW);
-    digitalWrite(MOTOR_A_BACKWARD, LOW);
-    digitalWrite(MOTOR_B_LEFT, LOW);
-    digitalWrite(MOTOR_B_RIGHT, LOW);
 }
 
 /**
@@ -157,25 +146,21 @@ void stream_commands(char* command) {
 void motor_control(char* command) {
     Serial.printf("Received motor command: %s\n", command);
     
+    // Single key commands
     switch(command[0]) {
         case 'w':
-            Serial.println("Moving Forward");
             process_motor_command("forward");
             break;
         case 's':
-            Serial.println("Moving Reverse");
             process_motor_command("backward");
             break;
         case 'a':
-            Serial.println("Moving Left");
             process_motor_command("left");
             break;
         case 'd':
-            Serial.println("Moving Right");
             process_motor_command("right");
             break;
-        case 'x':
-            Serial.println("Stopping");
+        case 'e':
             process_motor_command("stop");
             break;
     }
@@ -196,9 +181,10 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
             break;
             
         case WStype_TEXT:
-            char command[2];
-            command[0] = (char)payload[0];
-            command[1] = '\0';
+            char command[3];  // Increased size to handle 2 chars + null terminator
+            if (length > 2) length = 2;  // Limit to 2 chars
+            memcpy(command, payload, length);
+            command[length] = '\0';
             
             if (command[0] == 'P' || command[0] == 'O') {
                 stream_commands(command);
@@ -239,23 +225,36 @@ esp_err_t root_handler(httpd_req_t *req) {
         "<script>"
         "var ws = new WebSocket('ws://192.168.1.1:81/');"
         "ws.binaryType = 'arraybuffer';"
-        "var keyIntervals = {};"
+        "var activeKeys = new Set();"
+        "var currentInterval = null;"
         "ws.onmessage = function(evt) {"
         "  if (typeof evt.data === 'string') return;"
         "  document.getElementById('stream').src = URL.createObjectURL(new Blob([evt.data], { type: 'image/jpeg' }));"
         "};"
         "function sendCommand(cmd) { ws.send(cmd); }"
+        "function updateMovement() {"
+        "  const keys = Array.from(activeKeys).sort().join('');"
+        "  if (keys) sendCommand(keys);"
+        "  else sendCommand('e');"
+        "}"
         "document.addEventListener('keydown', function(e) {"
-        "  if (keyIntervals[e.key]) return;"
-        "  const validKeys = {'w': true, 'a': true, 's': true, 'd': true, 'x': true};"
-        "  if (validKeys[e.key]) {"
-        "    keyIntervals[e.key] = setInterval(() => sendCommand(e.key), 100);"
+        "  const validKeys = {'w': true, 'a': true, 's': true, 'd': true, 'e': true};"
+        "  if (validKeys[e.key] && !activeKeys.has(e.key)) {"
+        "    activeKeys.add(e.key);"
+        "    if (!currentInterval) {"
+        "      updateMovement();"
+        "      currentInterval = setInterval(updateMovement, 100);"
+        "    }"
         "  }"
         "});"
         "document.addEventListener('keyup', function(e) {"
-        "  if (keyIntervals[e.key]) {"
-        "    clearInterval(keyIntervals[e.key]);"
-        "    delete keyIntervals[e.key];"
+        "  if (activeKeys.has(e.key)) {"
+        "    activeKeys.delete(e.key);"
+        "    if (activeKeys.size === 0) {"
+        "      clearInterval(currentInterval);"
+        "      currentInterval = null;"
+        "      sendCommand('e');"
+        "    }"
         "  }"
         "});"
         "</script></head><body>"
@@ -263,7 +262,7 @@ esp_err_t root_handler(httpd_req_t *req) {
         "<div><button class='button' onclick='sendCommand(\"P\")'>Start Stream</button>"
         "<button class='button' onclick='sendCommand(\"O\")'>Stop Stream</button></div>"
         "<div class='controls'>"
-        "<p>Use W,A,S,D keys to control movement. X to stop.</p>"
+        "<p>Use W,A,S,D keys to control movement. E to stop.</p>"
         "</div></body></html>";
 
     httpd_resp_set_type(req, "text/html");

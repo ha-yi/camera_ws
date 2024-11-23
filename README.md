@@ -63,7 +63,7 @@ The ESP32-CAM module uses the following pins for the camera interface:
    - S: Move backward
    - A: Turn left
    - D: Turn right
-   - X: Stop movement
+   - E: Stop movement
 
 ## Control Interface
 
@@ -111,3 +111,16 @@ This project is open-source and available under the MIT License.
 ## Credits
 
 Built using ESP32-CAM and Arduino framework. Special thanks to the ESP32 community for their valuable resources and support.
+
+
+## Running
+
+Compilation:
+```
+arduino-cli compile --fqbn esp32:esp32:esp32cam ./camera_ws.ino
+```
+
+Flashing:
+```
+arduino-cli upload --port COM3 --fqbn esp32:esp32:esp32cam ./camera_ws.ino
+```
