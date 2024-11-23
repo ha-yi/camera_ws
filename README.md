@@ -81,6 +81,17 @@ The rover creates its own WiFi network:
 - Subnet Mask: 255.255.255.0
 - WebSocket Port: 81
 
+## Running
+
+Compilation:
+```
+arduino-cli compile --fqbn esp32:esp32:esp32cam ./camera_ws.ino
+```
+
+Flashing:
+```
+arduino-cli upload --port COM3 --fqbn esp32:esp32:esp32cam ./camera_ws.ino
+```
 
 
 ## Troubleshooting
@@ -113,14 +124,3 @@ This project is open-source and available under the MIT License.
 Built using ESP32-CAM and Arduino framework. Special thanks to the ESP32 community for their valuable resources and support.
 
 
-## Running
-
-Compilation:
-```
-arduino-cli compile --fqbn esp32:esp32:esp32cam ./camera_ws.ino
-```
-
-Flashing:
-```
-arduino-cli upload --port COM3 --fqbn esp32:esp32:esp32cam ./camera_ws.ino
-```
